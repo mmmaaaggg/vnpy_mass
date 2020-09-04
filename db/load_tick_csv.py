@@ -36,15 +36,18 @@ PreClosePrice (昨收盘),
 PreOpenInterest (昨持仓),
 PreSettlementPrice (上次结算价)
 """
+import math
 import os
 import csv
 import re
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
+import pandas as pd
+import numpy as np
 import config as _config  # NOQA
-from vnpy.trader.constant import Exchange
+from vnpy.trader.constant import Exchange, Interval
 from vnpy.trader.database import database_manager
-from vnpy.trader.object import TickData
+from vnpy.trader.object import TickData, BarData
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -97,17 +100,40 @@ def run_load_csv(folder_path=os.path.curdir):
         csv_load(file_path)
 
 
-def csv_load(file_path):
+def generate_bar_dt(dt, minutes):
+    date_only = datetime(dt.year, dt.month, dt.day)
+    delta = dt.to_pydatetime() - date_only
+    key = math.ceil(delta.seconds / 60 / minutes)
+    by = date_only + timedelta(minutes=key * minutes)
+    return by
+
+
+def merge_df_2_minutes_bar(df: pd.DataFrame, minutes: int) -> pd.DataFrame:
+    data_list = []
+    for bar_dt, sub_df in df.groupby(df['datetime'].apply(lambda x: generate_bar_dt(x, minutes))):
+        data_list.append({
+            'datetime': bar_dt,
+            'open_interest': sub_df['open_interest'].iloc[-1],
+            'open_price': sub_df['open_price'].iloc[0],
+            'high_price': sub_df['high_price'].max(),
+            'low_price': sub_df['low_price'].min(),
+            'close_price': sub_df['close_price'].iloc[-1],
+            'volume': sub_df['volume'].sum(),  # 目前没有 volume
+        })
+    new_df = pd.DataFrame(data_list)
+    return new_df
+
+
+def csv_load(file_path, minutes_list=[1, 60]):
     """
     读取csv文件内容，并写入到数据库中
+    当前文件没有考虑夜盘数据的情况，待有夜盘数据后需要对 trade_date 进行一定的调整
     """
+    ticks = []
+    start = None
+    count = 0
     with open(file_path, "r") as f:  # , encoding='utf-8'
         reader = csv.reader(f)
-
-        ticks = []
-        start = None
-        count = 0
-
         for item in reader:
             localtime, instrument_id, trade_date, action_date, update_time, update_millisec, \
             last_price, volume, high_price, low_price, open_price, close_price, \
@@ -156,10 +182,39 @@ def csv_load(file_path):
             if not start:
                 start = tick.datetime
 
-        if count > 0:
-            end = tick.datetime
-            database_manager.save_tick_data(ticks)
-            logger.info("插入数据%s - %s 总数量：%d", start, end, count)
+        if count == 0:
+            return
+
+        end = tick.datetime
+        database_manager.save_tick_data(ticks)
+        logger.info("插入 Tick 数据%s - %s 总数量：%d", start, end, count)
+        for n, minutes in enumerate(minutes_list, start=1):
+            df = pd.DataFrame(
+                [[
+                    _.datetime, _.open_interest,
+                    _.open_price, _.high_price, _.low_price, _.last_price, _.volume
+                ] for _ in ticks],
+                columns=[
+                    'datetime', 'open_interest',
+                    'open_price', 'high_price', 'low_price', 'close_price', 'volume'
+                ])
+            interval_df = merge_df_2_minutes_bar(df, minutes)
+            interval = Interval.MINUTE if minutes == 1 else Interval.HOUR
+            bars = [BarData(
+                gateway_name="DB",
+                symbol=instrument_id,
+                exchange=exchange,
+                datetime=_['datetime'],
+                interval=interval,
+                volume=_["volume"],
+                open_interest=_["open_interest"],
+                open_price=_["open_price"],
+                high_price=_["high_price"],
+                low_price=_["low_price"],
+                close_price=_["close_price"],
+            ) for key, _ in interval_df.T.items()]
+            database_manager.save_bar_data(bars)
+            logger.info("插入 %s 数据%s - %s 总数量：%d", interval, start, end, len(bars))
 
 
 def _test_csv_load():
