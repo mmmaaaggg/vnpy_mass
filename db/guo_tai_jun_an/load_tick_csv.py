@@ -19,6 +19,20 @@ from vnpy.trader.constant import Exchange, Interval
 from vnpy.trader.database import database_manager
 from vnpy.trader.object import TickData, BarData
 
+from db.common import get_file_iter, INSTRUMENT_EXCHANGE_DIC, PATTERN_INSTRUMENT_TYPE, merge_df_2_minutes_bar
+
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+
+
+def run_load_csv(folder_path=os.path.curdir):
+    """
+    遍历同一文件夹内所有csv文件，并且载入到数据库中
+    """
+    for file_name, file_path in get_file_iter(folder_path, filters=[".csv"]):
+        logger.info("载入文件：%s", file_path)
+        load_csv(file_path)
+
 
 def load_csv(file_path):
     """
@@ -28,42 +42,55 @@ def load_csv(file_path):
     """
     _, file_name = os.path.split(file_path)
     # 大商所L1分笔行情
-    if "".startswith('MFL1_TAQ_'):
+    if file_name.startswith('MFL1_TAQ_'):
         labels = [
             "Symbol", "ShortName", "SecurityID", "TradingDate", "TradingTime",
             "LastPrice", "HighPrice", "LowPrice", "TradeVolume", "TotalVolume",
-            "LastVolume", "PreTotalPosition", "TotalPosition", "PrePositionChange", "",
-            "TotalAmount", "TradeAmount", "PriceUpLimit", "PriceDownLimit", "PreSettlePrice",
-            "PreClosePrice", "OpenPrice", "ClosePrice", "SettlePrice", "LifeLow",
-            "Lifehigh", "", "", "", "",
-            "", "", "", "", "",
-            "", "", "", "", "",
-            "", "", "", "", "",
-            "", "", "", "", "",
-            "", "", "", "", "",
-            "", "", "", "", "",
-            "", "", "", "", "",
-            "", "", "", "", "",
+            "LastVolume", "PreTotalPosition", "TotalPosition", "PrePositionChange", "TotalAmount",
+            "TradeAmount", "PriceUpLimit", "PriceDownLimit", "PreSettlePrice", "PreClosePrice",
+            "OpenPrice", "ClosePrice", "SettlePrice", "LifeLow", "LifeHigh",
+            "AveragePrice01", "AveragePrice", "BidImplyQty", "AskImplyQty", "BuyOrSell",
+            "SellPrice01", "BuyPrice01", "SellVolume01", "BuyVolume01", "SellPrice05",
+            "SellPrice04", "SellPrice03", "SellPrice02", "BuyPrice02", "BuyPrice03",
+            "BuyPriceO4", "BuyPrice05", "SellVolume05", "SellVolumeO4", "SellVolume03",
+            "SellVolume02", "BuyVolume02", "BuyVolume03", "BuyVolume04", "BuyVolume05",
+            "PreDelta", "Delta", "Change", "ChangeRatio", "Varieties",
+            "ContinueSign", "Market", "UNIX", "OpenClose", "Amplitude",
+            "VolRate", "OrderDiff", "OrderRate", "SellVOL", "BuyVOL",
+            "PositionChange", "DeliverySettlePrice",
         ]
+    else:
+        raise ValueError(f"file_name='{file_name}' 目前不支持")
+
     ticks = []
     start = None
     count = 0
+    symbol_idx = labels.index('Symbol')
+    trading_time_idx = labels.index('TradingTime')
+    volume_idx = labels.index('TradeVolume')
+    open_interest_idx = labels.index('TotalPosition')
+    last_price_idx = labels.index('LastPrice')
+    upper_limit_price_idx = labels.index('PriceUpLimit')
+    lower_limit_price_idx = labels.index('PriceDownLimit')
+    open_price_idx = labels.index('OpenPrice')
+    high_price_idx = labels.index('HighPrice')
+    low_price_idx = labels.index('LowPrice')
+    pre_close_idx = labels.index('PreClosePrice')
+    bid_price1_idx = labels.index('BuyPrice01')
+    bid_vol1_idx = labels.index('BuyVolume01')
+    ask_price1_idx = labels.index('SellPrice01')
+    ask_vol1_idx = labels.index('SellVolume01')
     with open(file_path, "r") as f:  # , encoding='utf-8'
         reader = csv.reader(f)
         for item in reader:
-            localtime, instrument_id, trade_date, action_date, update_time, update_millisec, \
-            last_price, volume, high_price, low_price, open_price, close_price, \
-            avg_price, ask_price1, ask_vol1, bid_price1, bid_vol1, upper_limit_price, \
-            lower_limit_price, open_interest, trun_over, pre_close, pre_open_interest, pre_settlement_price = item
-
             # generate datetime
-            standard_time = f"{trade_date} {update_time}.{update_millisec}"
-            dt = datetime.strptime(standard_time, "%Y%m%d %H:%M:%S.%f")
+            dt = datetime.strptime(item[trading_time_idx], "%Y%m%d %H:%M:%S.%f")
 
             # filter
             if time(15, 1) < dt.time() < time(20, 59):
                 continue
 
+            instrument_id = item[symbol_idx]
             instrument_type = PATTERN_INSTRUMENT_TYPE.search(instrument_id).group()
             try:
                 exchange = INSTRUMENT_EXCHANGE_DIC[instrument_type.upper()]
@@ -76,19 +103,19 @@ def load_csv(file_path):
                 symbol=instrument_id,
                 datetime=dt,
                 exchange=exchange,  # Exchange.SHFE
-                volume=float(volume),
-                open_interest=float(open_interest),
-                last_price=float(last_price),
-                limit_up=float(upper_limit_price),
-                limit_down=float(lower_limit_price),
-                open_price=float(open_price),
-                high_price=float(high_price),
-                low_price=float(low_price),
-                pre_close=float(pre_close),
-                bid_price_1=float(bid_price1),
-                bid_volume_1=float(bid_vol1),
-                ask_price_1=float(ask_price1),
-                ask_volume_1=float(ask_vol1),
+                volume=float(item[volume_idx]),
+                open_interest=float(item[open_interest_idx]),
+                last_price=float(item[last_price_idx]),
+                limit_up=float(item[upper_limit_price_idx]),
+                limit_down=float(item[lower_limit_price_idx]),
+                open_price=float(item[open_price_idx]),
+                high_price=float(item[high_price_idx]),
+                low_price=float(item[low_price_idx]),
+                pre_close=float(item[pre_close_idx]),
+                bid_price_1=float(item[bid_price1_idx]),
+                bid_volume_1=float(item[bid_vol1_idx]),
+                ask_price_1=float(item[ask_price1_idx]),
+                ask_volume_1=float(item[ask_vol1_idx]),
                 gateway_name="DB",
             )
             ticks.append(tick)
@@ -132,5 +159,13 @@ def load_csv(file_path):
             logger.info("插入 %s 数据%s - %s 总数量：%d", interval, start, end, len(bars))
 
 
+def _test_csv_load():
+    folder_path = r'd:\download'
+    file_path = os.path.join(folder_path, "../.csv")
+    load_csv(file_path)
+
+
 if __name__ == "__main__":
-    pass
+    # _test_csv_load()
+    dir_path = r'd:\download'
+    run_load_csv(dir_path)
