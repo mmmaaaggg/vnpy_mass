@@ -100,7 +100,7 @@ def run_load_csv(folder_path=os.path.curdir):
     """
     for file_name, file_path in get_file_iter(folder_path, filters=[".csv"]):
         logger.info("载入文件：%s", file_path)
-        csv_load(file_path)
+        load_csv(file_path)
 
 
 def generate_bar_dt(dt, minutes):
@@ -127,7 +127,7 @@ def merge_df_2_minutes_bar(df: pd.DataFrame, minutes: int) -> pd.DataFrame:
     return new_df
 
 
-def csv_load(file_path):
+def load_csv(file_path):
     """
     读取csv文件内容，并写入到数据库中
     当前文件没有考虑夜盘数据的情况，待有夜盘数据后需要对 trade_date 进行一定的调整
@@ -221,8 +221,8 @@ def csv_load(file_path):
 
 def _test_csv_load():
     folder_path = r'd:\download\2020.4.15~2020.5.17.期货全市场行情数据\Data\20200415'
-    file_path = os.path.join(folder_path, "examples/au2004.csv")
-    csv_load(file_path)
+    file_path = os.path.join(folder_path, "../examples/au2004.csv")
+    load_csv(file_path)
 
 
 if __name__ == "__main__":
