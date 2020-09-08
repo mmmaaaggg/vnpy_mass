@@ -1,10 +1,13 @@
 """
 @author  : MG
 @Time    : 2020/9/2 14:18
-@File    : load_tick_csv.py
+@File    : load_tick_csv_pythonpai.py
 @contact : mmmaaaggg@163.com
 @desc    : 用于加载 tick csv文件到 mysql 数据库供 vnpy 使用
 【特别注意：】 vnpy 数据库没有主键约束，重复日期的数据可以反复导入，因此，避免程序重复执行 ！！！！
+
+数据来源：
+http://www.pythonpai.com/topic/4206/%E9%87%8F%E5%8C%96%E7%88%B1%E5%A5%BD%E8%80%85%E7%A6%8F%E5%88%A9%E8%B4%B4-%E9%87%8F%E5%8C%96%E4%BA%A4%E6%98%93%E4%BB%A3%E7%A0%81-%E5%B7%A5%E5%85%B7-2012-2020%E5%B9%B4%E6%9C%9F%E8%B4%A7%E5%85%A8%E5%93%81%E7%A7%8Dtick%E6%95%B0%E6%8D%AE%E5%85%B1%E4%BA%AB
 
 代码来自 https://www.vnpy.com/forum/topic/1421-zai-ru-tickshu-ju-csvge-shi-dao-shu-ju-ku-zhong
 在此基础上做了修改
@@ -124,7 +127,7 @@ def merge_df_2_minutes_bar(df: pd.DataFrame, minutes: int) -> pd.DataFrame:
     return new_df
 
 
-def csv_load(file_path, minutes_list=[1, 60]):
+def csv_load(file_path):
     """
     读取csv文件内容，并写入到数据库中
     当前文件没有考虑夜盘数据的情况，待有夜盘数据后需要对 trade_date 进行一定的调整
@@ -188,7 +191,7 @@ def csv_load(file_path, minutes_list=[1, 60]):
         end = tick.datetime
         database_manager.save_tick_data(ticks)
         logger.info("插入 Tick 数据%s - %s 总数量：%d", start, end, count)
-        for n, minutes in enumerate(minutes_list, start=1):
+        for n, (minutes, interval) in enumerate(zip([1, 60], [Interval.MINUTE, Interval.HOUR]), start=1):
             df = pd.DataFrame(
                 [[
                     _.datetime, _.open_interest,
@@ -199,7 +202,6 @@ def csv_load(file_path, minutes_list=[1, 60]):
                     'open_price', 'high_price', 'low_price', 'close_price', 'volume'
                 ])
             interval_df = merge_df_2_minutes_bar(df, minutes)
-            interval = Interval.MINUTE if minutes == 1 else Interval.HOUR
             bars = [BarData(
                 gateway_name="DB",
                 symbol=instrument_id,
