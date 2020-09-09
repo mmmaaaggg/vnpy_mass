@@ -8,7 +8,7 @@
 import math
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 import config as _config  # NOQA
 from vnpy.trader.constant import Exchange
@@ -55,7 +55,7 @@ def get_file_iter(folder_path, filters=None):
 
 
 def generate_bar_dt(dt, minutes):
-    date_only = datetime(dt.year, dt.month, dt.day)
+    date_only = datetime(dt.year, dt.month, dt.day).astimezone(timezone(timedelta(hours=8)))
     delta = dt.to_pydatetime() - date_only
     key = math.ceil(delta.seconds / 60 / minutes)
     by = date_only + timedelta(minutes=key * minutes)
