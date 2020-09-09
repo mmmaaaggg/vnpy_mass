@@ -11,7 +11,7 @@ import os
 import csv
 import re
 import logging
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timezone, timedelta
 import pandas as pd
 import numpy as np
 import config as _config  # NOQA
@@ -84,10 +84,11 @@ def load_csv(file_path):
         reader = csv.reader(f)
         for item in reader:
             # generate datetime
-            dt = datetime.strptime(item[trading_time_idx], "%Y%m%d %H:%M:%S.%f")
+            dt = datetime.strptime(item[trading_time_idx], "%Y-%m-%d %H:%M:%S.%f"
+                                   ).astimezone(timezone(timedelta(hours=8)))
 
             # filter
-            if time(15, 1) < dt.time() < time(20, 59):
+            if time(15, 1) <= dt.time() <= time(20, 59):
                 continue
 
             instrument_id = item[symbol_idx]
@@ -146,7 +147,7 @@ def load_csv(file_path):
                 gateway_name="DB",
                 symbol=instrument_id,
                 exchange=exchange,
-                datetime=_['datetime'],
+                datetime=_['datetime'].to_pydatetime(),  # Timestamp 数据可以通过 .tz_localize('Asia/Shanghai') 增加时区信息
                 interval=interval,
                 volume=_["volume"],
                 open_interest=_["open_interest"],
@@ -154,18 +155,18 @@ def load_csv(file_path):
                 high_price=_["high_price"],
                 low_price=_["low_price"],
                 close_price=_["close_price"],
-            ) for key, _ in interval_df.T.items()]
+            ) for key, _ in interval_df.iterrows()]
             database_manager.save_bar_data(bars)
             logger.info("插入 %s 数据%s - %s 总数量：%d", interval, start, end, len(bars))
 
 
 def _test_csv_load():
-    folder_path = r'd:\download'
-    file_path = os.path.join(folder_path, "../.csv")
+    folder_path = r'd:\download\MFL1_TAQ_202006'
+    file_path = os.path.join(folder_path, "MFL1_TAQ_A2007_202006.csv")
     load_csv(file_path)
 
 
 if __name__ == "__main__":
     # _test_csv_load()
-    dir_path = r'd:\download'
+    dir_path = r'd:\download\MFL1_TAQ_202006'
     run_load_csv(dir_path)
