@@ -13,8 +13,8 @@ import pandas as pd
 import config as _config  # NOQA
 from vnpy.trader.constant import Exchange
 
-
-PATTERN_INSTRUMENT_TYPE = re.compile(r'[A-Za-z]+(?=\d+$)')
+PATTERN_INSTRUMENT_TYPE = re.compile(r'[A-Za-z]+(?=\d{4}$)')
+PATTERN_MAININSTRUMENT_TYPE = re.compile(r'[A-Za-z]+M(?=\d{2}$)')
 # 交易所品种对照表参考链接
 # http://www.khqihuo.com/spqh/1443.html
 EXCHANGE_INSTRUMENTS_DIC = {
@@ -31,11 +31,38 @@ EXCHANGE_INSTRUMENTS_DIC = {
                    "BB", "PP", "RR", "EB", "EG"),
     Exchange.INE: ("SC", "NR"),
 }
-
+# 合约，交易所对照表
 INSTRUMENT_EXCHANGE_DIC = {}
 for _exchange, _inst_list in EXCHANGE_INSTRUMENTS_DIC.items():
     for _inst in _inst_list:
         INSTRUMENT_EXCHANGE_DIC[_inst] = _exchange
+
+# 相关主力合约代码为 代码+M，例如：EG主力合约 EGM
+EXCHANGE_MAIN_INSTRUMENTS_DIC = {k: (f'{_}M' for _ in v) for k, v in EXCHANGE_INSTRUMENTS_DIC.items()}
+# 主力合约，交易所对照表
+MAIN_INSTRUMENT_EXCHANGE_DIC = {}
+for _exchange, _inst_list in EXCHANGE_MAIN_INSTRUMENTS_DIC.items():
+    for _inst in _inst_list:
+        MAIN_INSTRUMENT_EXCHANGE_DIC[_inst] = _exchange
+
+
+def get_exchange(instrument_id):
+    match_instrument_type = PATTERN_INSTRUMENT_TYPE.search(instrument_id)
+    exchange = None
+    if match_instrument_type is not None:
+        try:
+            exchange = INSTRUMENT_EXCHANGE_DIC[match_instrument_type.group().upper()]
+        except KeyError:
+            pass
+    else:
+        match_instrument_type = PATTERN_MAININSTRUMENT_TYPE.search(instrument_id)
+        if match_instrument_type is not None:
+            try:
+                exchange = MAIN_INSTRUMENT_EXCHANGE_DIC[match_instrument_type.group().upper()]
+            except KeyError:
+                pass
+
+    return exchange
 
 
 def get_file_iter(folder_path, filters=None):

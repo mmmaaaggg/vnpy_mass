@@ -6,23 +6,31 @@
 @desc    : 用于加载国泰君安提供的tick数据
 根据 新高频数据说明书20180613.pdf 提供的格式。不同交易所，不同行情基本的数据格式略有不同，需要分别处理
 """
-import math
 import os
 import csv
-import re
 import logging
 from datetime import datetime, time, timezone, timedelta
 import pandas as pd
-import numpy as np
 import config as _config  # NOQA
-from vnpy.trader.constant import Exchange, Interval
+from vnpy.trader.constant import Interval
 from vnpy.trader.database import database_manager
 from vnpy.trader.object import TickData, BarData
 
-from db.common import get_file_iter, INSTRUMENT_EXCHANGE_DIC, PATTERN_INSTRUMENT_TYPE, merge_df_2_minutes_bar
+from db.common import get_file_iter, merge_df_2_minutes_bar, get_exchange
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
+logger.warning(r"""加载tick数据可能会非常占用数据库资源
+请适度增加 tmp_table_size innodb_buffer_pool_size 大小
+防止出现 (1206, 'The total number of locks exceeds the lock table size') 错误
+推荐参数：
+tmp_table_size=1024M
+innodb_buffer_pool_size=128M
+另外，为了降低磁盘IO负担
+sync_binlog 默认为1， 提高大到1000
+
+Windows系统配置文件：c:\ProgramData\MySQL\MySQL Server 8.0\my.ini
+""")
 
 
 def run_load_csv(folder_path=os.path.curdir):
@@ -80,6 +88,7 @@ def load_csv(file_path):
     bid_vol1_idx = labels.index('BuyVolume01')
     ask_price1_idx = labels.index('SellPrice01')
     ask_vol1_idx = labels.index('SellVolume01')
+    exchange = None
     with open(file_path, "r") as f:  # , encoding='utf-8'
         reader = csv.reader(f)
         for item in reader:
@@ -92,13 +101,12 @@ def load_csv(file_path):
                 continue
 
             instrument_id = item[symbol_idx]
-            instrument_type = PATTERN_INSTRUMENT_TYPE.search(instrument_id).group()
-            try:
-                exchange = INSTRUMENT_EXCHANGE_DIC[instrument_type.upper()]
-            except KeyError:
-                logger.exception("当前品种 %s(%s) 不支持，需要更新交易所对照表后才可载入数据",
-                                 instrument_type, instrument_id)
-                break
+            if exchange is None:
+                exchange = get_exchange(instrument_id)
+                if exchange is None:
+                    logger.exception("当前品种 %s 不支持，需要更新交易所对照表后才可载入数据",
+                                     instrument_id)
+                    break
 
             tick = TickData(
                 symbol=instrument_id,

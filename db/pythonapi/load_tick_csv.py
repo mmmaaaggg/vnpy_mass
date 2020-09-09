@@ -44,13 +44,12 @@ import csv
 import logging
 from datetime import datetime, time
 import pandas as pd
-import numpy as np
 import config as _config  # NOQA
-from vnpy.trader.constant import Exchange, Interval
+from vnpy.trader.constant import Interval
 from vnpy.trader.database import database_manager
 from vnpy.trader.object import TickData, BarData
 
-from db.common import get_file_iter, INSTRUMENT_EXCHANGE_DIC, PATTERN_INSTRUMENT_TYPE, merge_df_2_minutes_bar
+from db.common import get_file_iter, merge_df_2_minutes_bar, get_exchange
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -73,6 +72,7 @@ def load_csv(file_path):
     ticks = []
     start = None
     count = 0
+    exchange = None
     with open(file_path, "r") as f:  # , encoding='utf-8'
         reader = csv.reader(f)
         for item in reader:
@@ -89,13 +89,12 @@ def load_csv(file_path):
             if time(15, 1) < dt.time() < time(20, 59):
                 continue
 
-            instrument_type = PATTERN_INSTRUMENT_TYPE.search(instrument_id).group()
-            try:
-                exchange = INSTRUMENT_EXCHANGE_DIC[instrument_type.upper()]
-            except KeyError:
-                logger.exception("当前品种 %s(%s) 不支持，需要更新交易所对照表后才可载入数据",
-                                 instrument_type, instrument_id)
-                break
+            if exchange is None:
+                exchange = get_exchange(instrument_id)
+                if exchange is None:
+                    logger.exception("当前品种 %s 不支持，需要更新交易所对照表后才可载入数据",
+                                     instrument_id)
+                    break
 
             tick = TickData(
                 symbol=instrument_id,
