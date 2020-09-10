@@ -28,7 +28,7 @@ EXCHANGE_INSTRUMENTS_DIC = {
                     "CJ", "UR"),
     Exchange.DCE: ("A", "B", "M", "Y", "C", "CS", "L",
                    "P", "V", "J", "JM", "I", "JD", "FB",
-                   "BB", "PP", "RR", "EB", "EG"),
+                   "BB", "PP", "RR", "EB", "EG", "PG"),
     Exchange.INE: ("SC", "NR"),
 }
 # 合约，交易所对照表
@@ -48,36 +48,45 @@ for _exchange, _inst_list in EXCHANGE_MAIN_INSTRUMENTS_DIC.items():
 
 def get_exchange(instrument_id):
     match_instrument_type = PATTERN_INSTRUMENT_TYPE.search(instrument_id)
-    exchange = None
+    instrument_type, exchange = None, None
     if match_instrument_type is not None:
         try:
-            exchange = INSTRUMENT_EXCHANGE_DIC[match_instrument_type.group().upper()]
+            instrument_type = match_instrument_type.group()
+            exchange = INSTRUMENT_EXCHANGE_DIC[instrument_type.upper()]
         except KeyError:
             pass
     else:
         match_instrument_type = PATTERN_MAININSTRUMENT_TYPE.search(instrument_id)
         if match_instrument_type is not None:
             try:
-                exchange = MAIN_INSTRUMENT_EXCHANGE_DIC[match_instrument_type.group().upper()]
+                instrument_type = match_instrument_type.group()
+                exchange = MAIN_INSTRUMENT_EXCHANGE_DIC[instrument_type.upper()]
             except KeyError:
                 pass
 
-    return exchange
+    return instrument_type, exchange
 
 
-def get_file_iter(folder_path, filters=None):
+def get_file_iter(folder_path, filters=None, ignore_until_file_name=None):
     """
     文件列表迭代器，返回当前目录及子目录下的所有文件名及文件路径
     :param folder_path:
     :param filters: 文件后缀名筛选
     :return:
     """
+    ignore = ignore_until_file_name is not None
     for file_name in os.listdir(folder_path):
         file_path = os.path.join(folder_path, file_name)
         if os.path.isdir(file_path):
             yield from get_file_iter(file_path)
         else:
             if filters is None or os.path.splitext(file_name)[1] in filters:
+                if ignore:
+                    if ignore_until_file_name == file_name:
+                        ignore = False
+                    else:
+                        continue
+
                 yield file_name, file_path
 
 
