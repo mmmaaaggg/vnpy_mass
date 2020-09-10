@@ -22,12 +22,10 @@ logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 logger.warning(r"""加载tick数据可能会非常占用数据库资源
 请适度增加 tmp_table_size innodb_buffer_pool_size 大小
-防止出现 (1206, 'The total number of locks exceeds the lock table size') 错误
-推荐参数：
+防止出现 (1206, 'The total number of locks exceeds the lock table size') 错误，推荐调整 MYSQL 参数：
 tmp_table_size=2048M
 innodb_buffer_pool_size=512M
-另外，为了降低磁盘IO负担
-sync_binlog 默认为1， 提高大到0
+另外，为了降低磁盘IO负担， sync_binlog 默认为 1 -> 调整为 0
 Windows系统配置文件：c:\ProgramData\MySQL\MySQL Server 8.0\my.ini
 """)
 
@@ -154,12 +152,10 @@ def load_csv(file_path, main_instrument_only=False):
         for n, (minutes, interval) in enumerate(zip([1, 60], [Interval.MINUTE, Interval.HOUR]), start=1):
             df = pd.DataFrame(
                 [[
-                    _.datetime, _.open_interest,
-                    _.open_price, _.high_price, _.low_price, _.last_price, _.volume
+                    _.datetime, _.open_interest, _.last_price, _.volume
                 ] for _ in ticks],
                 columns=[
-                    'datetime', 'open_interest',
-                    'open_price', 'high_price', 'low_price', 'close_price', 'volume'
+                    'datetime', 'open_interest', 'last_price', 'volume'
                 ])
             interval_df = merge_df_2_minutes_bar(df, minutes)
             bars = [BarData(
@@ -180,12 +176,12 @@ def load_csv(file_path, main_instrument_only=False):
 
 
 def _test_csv_load():
-    folder_path = r'd:\download\MFL1_TAQ_202006'
-    file_path = os.path.join(folder_path, "MFL1_TAQ_NR2006_202006.csv")
+    folder_path = r'e:\TickData\MFL1_TAQ_202006'
+    file_path = os.path.join(folder_path, "MFL1_TAQ_AG2007_202006.csv")
     load_csv(file_path)
 
 
 if __name__ == "__main__":
     _test_csv_load()
-    dir_path = r'd:\download\MFL1_TAQ_202006'
-    run_load_csv(dir_path, main_instrument_only=True, ignore_until_file_name="MFL1_TAQ_NR2006_202006.csv")
+    # dir_path = r'd:\download\MFL1_TAQ_202006'
+    # run_load_csv(dir_path, main_instrument_only=True, ignore_until_file_name="MFL1_TAQ_NR2006_202006.csv")

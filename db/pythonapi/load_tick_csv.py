@@ -131,12 +131,10 @@ def load_csv(file_path):
         for n, (minutes, interval) in enumerate(zip([1, 60], [Interval.MINUTE, Interval.HOUR]), start=1):
             df = pd.DataFrame(
                 [[
-                    _.datetime, _.open_interest,
-                    _.open_price, _.high_price, _.low_price, _.last_price, _.volume
+                    _.datetime, _.open_interest, _.last_price, _.volume
                 ] for _ in ticks],
                 columns=[
-                    'datetime', 'open_interest',
-                    'open_price', 'high_price', 'low_price', 'close_price', 'volume'
+                    'datetime', 'open_interest', 'last_price', 'volume'
                 ])
             interval_df = merge_df_2_minutes_bar(df, minutes)
             bars = [BarData(

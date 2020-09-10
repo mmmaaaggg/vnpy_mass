@@ -104,10 +104,10 @@ def merge_df_2_minutes_bar(df: pd.DataFrame, minutes: int) -> pd.DataFrame:
         data_list.append({
             'datetime': bar_dt,
             'open_interest': sub_df['open_interest'].iloc[-1],
-            'open_price': sub_df['open_price'].iloc[0],
-            'high_price': sub_df['high_price'].max(),
-            'low_price': sub_df['low_price'].min(),
-            'close_price': sub_df['close_price'].iloc[-1],
+            'open_price': sub_df['last_price'].iloc[0],
+            'high_price': sub_df['last_price'].max(),
+            'low_price': sub_df['last_price'].min(),
+            'close_price': sub_df['last_price'].iloc[-1],
             'volume': sub_df['volume'].sum(),  # 目前没有 volume
         })
     new_df = pd.DataFrame(data_list)
