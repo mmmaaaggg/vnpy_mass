@@ -11,6 +11,8 @@ import csv
 import logging
 from datetime import datetime, time, timezone, timedelta
 import pandas as pd
+from queue import Queue, Empty
+from threading import Thread
 import config as _config  # NOQA
 from vnpy.trader.constant import Interval, Exchange
 from vnpy.trader.database import database_manager
@@ -30,21 +32,43 @@ Windows系统配置文件：c:\ProgramData\MySQL\MySQL Server 8.0\my.ini
 """)
 
 
+class JobWorker(Thread):
+    def __init__(self, maxsize=20):
+        super().__init__()
+        self.job_queue = Queue(maxsize=maxsize)
+
+    def run(self):
+        while True:
+            try:
+                func, param = self.job_queue.get(timeout=5)
+                func(param)
+                self.job_queue.task_done()
+                logger.info('%s 执行 %d 数据任务完成', func.__name__, len(param))
+            except Empty:
+                logger.info('等待队列任务...')
+
+
 def run_load_csv(folder_path=os.path.curdir, main_instrument_only=False, ignore_until_file_name=None):
     """
     遍历同一文件夹内所有csv文件，并且载入到数据库中
     """
+    worker = JobWorker()
+    worker.start()
     for n, (file_name, file_path) in enumerate(get_file_iter(
             folder_path, filters=[".csv"], ignore_until_file_name=ignore_until_file_name), start=1):
         logger.info("%d)载入文件：%s", n, file_path)
-        load_csv(file_path, main_instrument_only)
+        load_csv(file_path, main_instrument_only, worker.job_queue)
+
+    worker.join()
+    logger.info("所有任务完成")
 
 
-def load_csv(file_path, main_instrument_only=False):
+def load_csv(file_path, main_instrument_only=False, job_queue: Queue = None):
     """
     根据文件名，选择不同的格式进行解析，并插入tick数据库，同时合成分钟及小时数据
     :param file_path:
     :param main_instrument_only: 仅接收主力合约
+    :param job_queue: 是否使用任务队列
     :return:
     """
     _, file_name = os.path.split(file_path)
@@ -107,7 +131,7 @@ def load_csv(file_path, main_instrument_only=False):
                     try:
                         exchange = getattr(Exchange, item[exchange_idx])
                         logger.warning("当前品种 %s[%s] 不支持，需要更新交易所对照表后才可载入数据，使用数据中指定的交易所 %s",
-                                         instrument_id, instrument_type, exchange)
+                                       instrument_id, instrument_type, exchange)
                     except AttributeError:
                         logger.exception("当前品种 %s[%s] 不支持，需要更新交易所对照表后才可载入数据",
                                          instrument_id, instrument_type)
@@ -147,8 +171,13 @@ def load_csv(file_path, main_instrument_only=False):
             return
 
         end = tick.datetime
-        database_manager.save_tick_data(ticks)
-        logger.info("插入 Tick 数据%s - %s 总数量：%d", start, end, count)
+        if job_queue is None:
+            database_manager.save_tick_data(ticks)
+        else:
+            job_queue.put((database_manager.save_tick_data, ticks))
+
+        logger.info("插入 Tick 数据%s - %s 总数量：%d %s",
+                    start, end, count, '' if job_queue is None else '加入任务队列')
         for n, (minutes, interval) in enumerate(zip([1, 60], [Interval.MINUTE, Interval.HOUR]), start=1):
             df = pd.DataFrame(
                 [[
@@ -171,8 +200,13 @@ def load_csv(file_path, main_instrument_only=False):
                 low_price=_["low_price"],
                 close_price=_["close_price"],
             ) for key, _ in interval_df.iterrows()]
-            database_manager.save_bar_data(bars)
-            logger.info("插入 %s 数据%s - %s 总数量：%d", interval, start, end, len(bars))
+            if job_queue is None:
+                database_manager.save_bar_data(bars)
+            else:
+                job_queue.put((database_manager.save_bar_data, bars))
+
+            logger.info("插入 %s 数据%s - %s 总数量：%d %s",
+                        interval, start, end, len(bars), '' if job_queue is None else '加入任务队列')
 
 
 def _test_csv_load():
@@ -182,6 +216,10 @@ def _test_csv_load():
 
 
 if __name__ == "__main__":
-    _test_csv_load()
-    # dir_path = r'd:\download\MFL1_TAQ_202006'
-    # run_load_csv(dir_path, main_instrument_only=True, ignore_until_file_name="MFL1_TAQ_NR2006_202006.csv")
+    # _test_csv_load()
+    dir_path = r'e:\TickData'
+    run_load_csv(
+        dir_path,
+        # main_instrument_only=True,
+        # ignore_until_file_name="MFL1_TAQ_NR2006_202006.csv"
+    )
