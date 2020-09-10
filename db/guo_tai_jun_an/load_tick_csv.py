@@ -12,7 +12,7 @@ import logging
 from datetime import datetime, time, timezone, timedelta
 import pandas as pd
 import config as _config  # NOQA
-from vnpy.trader.constant import Interval
+from vnpy.trader.constant import Interval, Exchange
 from vnpy.trader.database import database_manager
 from vnpy.trader.object import TickData, BarData
 
@@ -24,28 +24,29 @@ logger.warning(r"""加载tick数据可能会非常占用数据库资源
 请适度增加 tmp_table_size innodb_buffer_pool_size 大小
 防止出现 (1206, 'The total number of locks exceeds the lock table size') 错误
 推荐参数：
-tmp_table_size=1024M
-innodb_buffer_pool_size=128M
+tmp_table_size=2048M
+innodb_buffer_pool_size=512M
 另外，为了降低磁盘IO负担
-sync_binlog 默认为1， 提高大到1000
-
+sync_binlog 默认为1， 提高大到0
 Windows系统配置文件：c:\ProgramData\MySQL\MySQL Server 8.0\my.ini
 """)
 
 
-def run_load_csv(folder_path=os.path.curdir):
+def run_load_csv(folder_path=os.path.curdir, main_instrument_only=False, ignore_until_file_name=None):
     """
     遍历同一文件夹内所有csv文件，并且载入到数据库中
     """
-    for file_name, file_path in get_file_iter(folder_path, filters=[".csv"]):
-        logger.info("载入文件：%s", file_path)
-        load_csv(file_path)
+    for n, (file_name, file_path) in enumerate(get_file_iter(
+            folder_path, filters=[".csv"], ignore_until_file_name=ignore_until_file_name), start=1):
+        logger.info("%d)载入文件：%s", n, file_path)
+        load_csv(file_path, main_instrument_only)
 
 
-def load_csv(file_path):
+def load_csv(file_path, main_instrument_only=False):
     """
     根据文件名，选择不同的格式进行解析，并插入tick数据库，同时合成分钟及小时数据
     :param file_path:
+    :param main_instrument_only: 仅接收主力合约
     :return:
     """
     _, file_name = os.path.split(file_path)
@@ -88,25 +89,35 @@ def load_csv(file_path):
     bid_vol1_idx = labels.index('BuyVolume01')
     ask_price1_idx = labels.index('SellPrice01')
     ask_vol1_idx = labels.index('SellVolume01')
+    exchange_idx = labels.index("Market")
     exchange = None
     with open(file_path, "r") as f:  # , encoding='utf-8'
-        reader = csv.reader(f)
+        reader = csv.reader(_.replace('\x00', '') for _ in f)
         for item in reader:
             # generate datetime
             dt = datetime.strptime(item[trading_time_idx], "%Y-%m-%d %H:%M:%S.%f"
                                    ).astimezone(timezone(timedelta(hours=8)))
 
-            # filter
-            if time(15, 1) <= dt.time() <= time(20, 59):
+            # filter 剔除9点钟以前的数据， 以及 15:00 ~ 21：00 之间的数据
+            if time(8, 0) <= dt.time() < time(9, 0) or time(15, 1) <= dt.time() < time(21, 0):
                 continue
 
             instrument_id = item[symbol_idx]
             if exchange is None:
-                exchange = get_exchange(instrument_id)
+                instrument_type, exchange = get_exchange(instrument_id)
                 if exchange is None:
-                    logger.exception("当前品种 %s 不支持，需要更新交易所对照表后才可载入数据",
-                                     instrument_id)
-                    break
+                    try:
+                        exchange = getattr(Exchange, item[exchange_idx])
+                        logger.warning("当前品种 %s[%s] 不支持，需要更新交易所对照表后才可载入数据，使用数据中指定的交易所 %s",
+                                         instrument_id, instrument_type, exchange)
+                    except AttributeError:
+                        logger.exception("当前品种 %s[%s] 不支持，需要更新交易所对照表后才可载入数据",
+                                         instrument_id, instrument_type)
+                        break
+
+            # 仅接收主力合约
+            if main_instrument_only and len(instrument_id) - len(instrument_type) == 4:
+                break
 
             tick = TickData(
                 symbol=instrument_id,
@@ -170,11 +181,11 @@ def load_csv(file_path):
 
 def _test_csv_load():
     folder_path = r'd:\download\MFL1_TAQ_202006'
-    file_path = os.path.join(folder_path, "MFL1_TAQ_A2007_202006.csv")
+    file_path = os.path.join(folder_path, "MFL1_TAQ_NR2006_202006.csv")
     load_csv(file_path)
 
 
 if __name__ == "__main__":
-    # _test_csv_load()
+    _test_csv_load()
     dir_path = r'd:\download\MFL1_TAQ_202006'
-    run_load_csv(dir_path)
+    run_load_csv(dir_path, main_instrument_only=True, ignore_until_file_name="MFL1_TAQ_NR2006_202006.csv")
