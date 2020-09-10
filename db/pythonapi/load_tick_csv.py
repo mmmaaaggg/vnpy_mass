@@ -90,7 +90,7 @@ def load_csv(file_path):
                 continue
 
             if exchange is None:
-                exchange = get_exchange(instrument_id)
+                instrument_type, exchange = get_exchange(instrument_id)
                 if exchange is None:
                     logger.exception("当前品种 %s 不支持，需要更新交易所对照表后才可载入数据",
                                      instrument_id)
