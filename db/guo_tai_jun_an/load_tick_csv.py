@@ -36,16 +36,20 @@ class JobWorker(Thread):
     def __init__(self, maxsize=20):
         super().__init__()
         self.job_queue = Queue(maxsize=maxsize)
+        self.keep_waiting = True
 
     def run(self):
         while True:
             try:
-                func, param = self.job_queue.get(timeout=5)
+                func, param = self.job_queue.get(timeout=60)
                 func(param)
                 self.job_queue.task_done()
                 logger.info('%s 执行 %d 数据任务完成', func.__name__, len(param))
             except Empty:
-                logger.info('等待队列任务...')
+                if self.keep_waiting:
+                    logger.info('等待队列任务...')
+                else:
+                    break
 
 
 def run_load_csv(folder_path=os.path.curdir, main_instrument_only=False, ignore_until_file_name=None):
@@ -59,6 +63,7 @@ def run_load_csv(folder_path=os.path.curdir, main_instrument_only=False, ignore_
         logger.info("%d)载入文件：%s", n, file_path)
         load_csv(file_path, main_instrument_only, worker.job_queue)
 
+    worker.keep_waiting = False
     worker.join()
     logger.info("所有任务完成")
 
