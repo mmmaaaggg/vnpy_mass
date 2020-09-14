@@ -37,11 +37,11 @@ def add_unique_index_on_bar_data():
     """
     批量导入的时候会删除索引，导入数据完后再重建索引，以提高导入速度
     当前函数用于重建 dbbardata 索引
+    如果，该命令运行超市或者提示语法错误，可以使用  mycli 运行此命令
     :return:
     """
     sql_str = """ALTER TABLE `dbbardata` 
-ADD UNIQUE INDEX `dbbardata_symbol_exchange_interval_datetime` (`symbol` ASC, `exchange` ASC, `interval` ASC, `datetime` ASC) VISIBLE
-"""
+ADD UNIQUE INDEX `dbbardata_symbol_exchange_interval_datetime` (`symbol` ASC, `exchange` ASC, `interval` ASC, `datetime` ASC) VISIBLE"""
     # 手动执行sql 语句
     meta = database_manager.class_bar._meta
     meta.database.execute(sql_str)
@@ -54,12 +54,11 @@ def add_unique_index_on_tick_data():
     :return:
     """
     sql_str = """ALTER TABLE `dbtickdata` 
-ADD UNIQUE INDEX `dbtickdata_symbol_exchange_datetime` (`symbol` ASC, `exchange` ASC, `datetime` ASC) VISIBLE
-"""
+ADD UNIQUE INDEX `dbtickdata_symbol_exchange_datetime` (`symbol` ASC, `exchange` ASC, `datetime` ASC) VISIBLE"""
     # 手动执行sql 语句
     meta = database_manager.class_bar._meta
     meta.database.execute(sql_str)
 
 
 if __name__ == "__main__":
-    pass
+    add_unique_index_on_bar_data()
