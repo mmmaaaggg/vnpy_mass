@@ -1,2 +1,3 @@
 rem jupyter.exe notebook --generate-config --allow-root
-jupyter.exe notebook
+cd d:\IDE\vnstudio\Scripts
+jupyter.exe notebook --notebook-dir="D:\github\vnpy_mass\strategies"
