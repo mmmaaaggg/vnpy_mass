@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from sklearn import ensemble, preprocessing, metrics
 from ibats_common.backend.factor import get_factor
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.model_selection import train_test_split
 from vnpy.app.cta_strategy import (
     StopOrder,
     TickData,
@@ -25,7 +25,7 @@ from vnpy.app.cta_strategy import (
 
 BAR_ATTRIBUTES = [
     'open_price', 'high_price', 'low_price', 'close_price',
-    'datetime', 'volume', 'open_interest',
+    'datetime', 'volume',
 ]
 
 
@@ -42,13 +42,13 @@ class MFStrategy(TargetPosTemplate):
     # n_estimators太小，容易欠拟合，n_estimators太大，又容易过拟合，
     # 一般选择一个适中的数值。默认是50。
     # 在实际调参的过程中，我们常常将n_estimators和learning_rate一起考虑。
-    n_estimators = 150
+    n_estimators = 50
     # 对于同样的训练集拟合效果，
     # 较小的ν意味着我们需要更多的弱学习器的迭代次数。
     # 通常用步长和迭代最大次数一起来决定算法的拟合效果。
     # 所以这两个参数n_estimators和learning_rate要一起调参。
     # 一般来说，可以从一个小一点的ν开始调参，默认是1。
-    learning_rate = 1.0
+    learning_rate = 0.01
 
     parameters = [
         "target_n_bars",
@@ -149,11 +149,11 @@ class MFStrategy(TargetPosTemplate):
         # df = pd.DataFrame(np.linspace(1, 2) * 10 + np.random.random(50),
         #                   index=pd.date_range('2020-01-01', periods=50),
         #                   columns=['close_price'])
-        df = self._factor_df
+        factor_df = self._factor_df
         y_s = self.hist_bar_df['close_price'].rolling(
             window=5).apply(lambda x: x.calc_calmar_ratio())
         # 剔除无效数据
-        is_available = ~(np.isinf(y_s) | np.isnan(y_s) | np.any(df, axis=1))
+        is_available = ~(np.isinf(y_s) | np.isnan(y_s) | np.any(factor_df.isnan(), axis=1))
         x_arr = self.hist_bar_df[is_available].to_numpy()
         y_arr = y_s[is_available]
         # 生成 -1 1 分类结果
