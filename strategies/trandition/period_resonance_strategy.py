@@ -74,14 +74,14 @@ class PeriodResonanceStrategy(TargetPosTemplate):
 
     author = "MG"
 
-    fast_window_1 = 5
-    slow_window_1 = 20
+    fast_window_1 = 6
+    slow_window_1 = 26
     signal_period_1 = 9
 
     period_n = 30
     fast_window_n = 5
-    slow_window_n = 20
-    signal_period_n = 9
+    slow_window_n = 14
+    signal_period_n = 7
 
     signal_pos = {}
 
