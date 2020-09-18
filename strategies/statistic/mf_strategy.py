@@ -10,6 +10,7 @@
 import ffn  # NOQA
 import numpy as np
 import pandas as pd
+from ibats_utils.mess import datetime_2_str, date_2_str
 from sklearn import ensemble, preprocessing, metrics
 from ibats_common.backend.factor import get_factor
 from sklearn.model_selection import train_test_split
@@ -23,11 +24,13 @@ from vnpy.app.cta_strategy import (
     BarGenerator,
     TargetPosTemplate,
 )
+from .config import logging
 
 BAR_ATTRIBUTES = [
     'open_price', 'high_price', 'low_price', 'close_price',
     'datetime', 'volume',
 ]
+logger = logging.getLogger()
 
 
 class MFStrategy(TargetPosTemplate):
@@ -78,6 +81,7 @@ class MFStrategy(TargetPosTemplate):
         self._current_bar = None  # 记录当前bar实例
         # 训练结果分类器以及归一化函数
         self.classifier, self.scaler = None, None
+        self.write_log('策略实例初始化')
 
     def on_stack_bar(self, bar):
         """将 bar 数据存入临时列表，等待后续处理"""
@@ -96,7 +100,7 @@ class MFStrategy(TargetPosTemplate):
         """
         self.preparing = True
         self.write_log("策略初始化")
-        self.load_bar(120 + 1000)
+        self.load_bar(10)
 
     def on_start(self):
         """
@@ -122,8 +126,8 @@ class MFStrategy(TargetPosTemplate):
         """
         Callback of new bar data update.
         """
-        self._current_bar = bar
         super().on_bar(bar)
+        self._current_bar = bar
         self.cancel_all()
 
         # bar信息记入缓存
@@ -136,13 +140,14 @@ class MFStrategy(TargetPosTemplate):
         # self.cancel_all()
         if self.last_train_date is None:
             # 从未进行过训练
-            self.write_log(f"开始训练数据")
+            # self.write_log(f"开始训练数据 last_train_date={self.last_train_date}")
             self.retrain_data()
 
         if self.classifier is None:
             return
 
         target_position = self.predict()
+        self.write_log(f'{datetime_2_str(bar.datetime)} target_position={target_position}')
         self.set_target_pos(target_pos=target_position)
         # # 平仓
         # if target_position <= 0 < self.pos:
@@ -186,7 +191,7 @@ class MFStrategy(TargetPosTemplate):
             window=5).apply(lambda x: x.calc_calmar_ratio())
         # 剔除无效数据
         is_available = ~(np.isinf(y_s) | np.isnan(y_s) | np.any(np.isnan(factor_df), axis=1))
-        x_arr = self.hist_bar_df[is_available].to_numpy()
+        x_arr = factor_df[is_available].to_numpy()
         y_arr = y_s[is_available]
         # 生成 -1 1 分类结果
         y_arr[y_arr > 0] = 1
@@ -205,15 +210,16 @@ class MFStrategy(TargetPosTemplate):
         clf.fit(x_train_trans_arr, y_train_arr)
         # 交叉检验
         y_pred = clf.predict(x_train_trans_arr)
-        print('Accuracy on train set = {:.2f}%'.format(metrics.accuracy_score(y_train_arr, y_pred) * 100))
+        self.write_log('Accuracy on train set = {:.2f}%'.format(metrics.accuracy_score(y_train_arr, y_pred) * 100))
         x_test_trans = scaler.transform(x_test_arr)
         y_pred = clf.predict(x_test_trans)
         y_pred_prob = clf.predict_proba(x_test_trans)
-        print('Accuracy on test set = {:.2f}%'.format(metrics.accuracy_score(y_test_arr, y_pred) * 100))
-        print('Log-loss on test set = {:.5f}'.format(metrics.log_loss(y_test_arr, y_pred_prob)))
+        self.write_log('Accuracy on test set = {:.2f}%'.format(metrics.accuracy_score(y_test_arr, y_pred) * 100))
+        self.write_log('Log-loss on test set = {:.5f}'.format(metrics.log_loss(y_test_arr, y_pred_prob)))
         self.classifier = clf
         self.scaler = scaler
         self.last_train_date = self._current_bar.datetime.date()
+        self.write_log(f"训练结束，训练日：{date_2_str(self.last_train_date)}")
 
     def predict(self) -> int:
         """预测数据返回 -1空头，0，平仓，1多头"""
@@ -224,8 +230,7 @@ class MFStrategy(TargetPosTemplate):
 
     def generate_factors(self):
         """整理缓存数据，生成相应的因子"""
-        print("生成因子数据")
-        self.write_log("生成因子数据")
+        # self.write_log("生成因子数据")
         df = pd.DataFrame(
             [{key: getattr(_, key) for key in BAR_ATTRIBUTES}
              for _ in self._hist_bar_list]).set_index('datetime')
@@ -241,7 +246,9 @@ class MFStrategy(TargetPosTemplate):
         # 生成因子
         self._factor_df = get_factor(
             self.hist_bar_df,
-            ohlcav_col_name_list=['open_price', 'high_price', 'low_price', 'close_price', None, 'volume'])
+            ohlcav_col_name_list=['open_price', 'high_price', 'low_price', 'close_price', None, 'volume'],
+            dropna=False
+        )
 
     def on_trade(self, trade: TradeData):
         """
@@ -254,6 +261,10 @@ class MFStrategy(TargetPosTemplate):
         Callback of new order data update.
         """
         super().on_order(order)
+
+    def write_log(self, msg: str):
+        super().write_log(msg)
+        logger.info(msg)
 
 
 if __name__ == "__main__":
