@@ -55,6 +55,7 @@ class MFStrategy(TargetPosTemplate):
     # 所以这两个参数n_estimators和learning_rate要一起调参。
     # 一般来说，可以从一个小一点的ν开始调参，默认是1。
     learning_rate = 0.01
+    bs_revert = 0
 
     parameters = [
         "target_n_bars",
@@ -64,6 +65,7 @@ class MFStrategy(TargetPosTemplate):
         "learning_rate",
         "trailing_percent",
         "fixed_size",
+        "bs_revert"
     ]
 
     def __init__(self, cta_engine, strategy_name, vt_symbol, setting):
@@ -147,8 +149,9 @@ class MFStrategy(TargetPosTemplate):
             return
 
         target_position = self.predict()
-        self.write_log(f'{datetime_2_str(bar.datetime)} target_position={target_position}')
-        self.set_target_pos(target_pos=target_position)
+        # self.write_log(f'{datetime_2_str(bar.datetime)} target_position={target_position}')
+        self.set_target_pos(
+            target_pos=(-target_position if self.bs_revert else target_position))
         # # 平仓
         # if target_position <= 0 < self.pos:
         #     price = bar.close_price * (1 - self.trailing_percent / 100)
