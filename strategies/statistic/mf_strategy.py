@@ -189,13 +189,20 @@ class MFStrategy(TargetPosTemplate):
         # df = pd.DataFrame(np.linspace(1, 2) * 10 + np.random.random(50),
         #                   index=pd.date_range('2020-01-01', periods=50),
         #                   columns=['close_price'])
-        factor_df = self._factor_df
+        factor_df = self._factor_df.iloc
         y_s = self.hist_bar_df['close_price'].rolling(
-            window=5).apply(lambda x: x.calc_calmar_ratio())
+            window=self.target_n_bars).apply(lambda x: x.calc_calmar_ratio())
         # 剔除无效数据
-        is_available = ~(np.isinf(y_s) | np.isnan(y_s) | np.any(np.isnan(factor_df), axis=1))
-        x_arr = factor_df[is_available].to_numpy()
+        is_available = ~(np.isinf(y_s) | np.isnan(y_s) | np.any(np.isnan(factor_df), axis=1))[:-self.target_n_bars]
+        # 截选对应的 factor_df， x_arr， y_arr
+        available_factor_df = factor_df[is_available]
+        x_arr = available_factor_df.to_numpy()
         y_arr = y_s[is_available]
+        # 根据 target_n_bars 进行数据切片
+        factor_df = factor_df.iloc[:-self.target_n_bars]
+        x_arr = x_arr[:-self.target_n_bars]
+        y_s = y_s[self.target_n_bars:]
+        assert x_arr.shape[0] == y_s.shape[0], "因子数据 x 长度要与训练目标 y 数据长度一致"
         # 生成 -1 1 分类结果
         y_arr[y_arr > 0] = 1
         y_arr[y_arr <= 0] = -1
