@@ -54,7 +54,7 @@ class MFStrategy(TargetPosTemplate):
     # 通常用步长和迭代最大次数一起来决定算法的拟合效果。
     # 所以这两个参数n_estimators和learning_rate要一起调参。
     # 一般来说，可以从一个小一点的ν开始调参，默认是1。
-    learning_rate = 0.01
+    learning_rate = 1.0
     bs_revert = 0
 
     parameters = [
@@ -89,11 +89,10 @@ class MFStrategy(TargetPosTemplate):
         """将 bar 数据存入临时列表，等待后续处理"""
         self._hist_bar_list.append(bar)
         curr_bar_date = bar.datetime.date()
-        if self._last_bar_date is None:
-            self._last_bar_date = curr_bar_date
-        else:
+        if self._last_bar_date is not None:
             self._is_new_day = self._last_bar_date != curr_bar_date
             if self._is_new_day:
+                logger.info("%s -> %s", self._last_bar_date, curr_bar_date)
                 self._hist_bar_days += 1
 
     def on_init(self):
@@ -138,23 +137,18 @@ class MFStrategy(TargetPosTemplate):
         #     return
 
         # 生成因子数据
-        self.generate_factors()
+        # self.generate_factors()
         # self.cancel_all()
-        if self.last_train_date is None:
-            # 从未进行过训练
-            # self.write_log(f"开始训练数据 last_train_date={self.last_train_date}")
-            self.retrain_data()
+        self.retrain_data()
+        if self.classifier is not None:
+            if self._factor_df is None:
+                self.generate_factors()
 
-        if self.classifier is None:
-            return
+            target_position = self.predict()
+            # self.write_log(f'{datetime_2_str(bar.datetime)} target_position={target_position}')
+            self.set_target_pos(
+                target_pos=(-target_position if self.bs_revert else target_position))
 
-        if self._factor_df is None:
-            self.generate_factors()
-
-        target_position = self.predict()
-        # self.write_log(f'{datetime_2_str(bar.datetime)} target_position={target_position}')
-        self.set_target_pos(
-            target_pos=(-target_position if self.bs_revert else target_position))
         # # 平仓
         # if target_position <= 0 < self.pos:
         #     price = bar.close_price * (1 - self.trailing_percent / 100)
@@ -173,6 +167,7 @@ class MFStrategy(TargetPosTemplate):
 
         # self.put_event()
         self._factor_df = None
+        self._last_bar_date = bar.datetime.date()
 
     def retrain_data(self, force_train=False):
         """
@@ -184,12 +179,14 @@ class MFStrategy(TargetPosTemplate):
         if not (self._is_new_day or force_train):
             # 只有每次换日时才重新训练
             return
-        if self._factor_df.shape[0] < 1000 or self._hist_bar_days < self.retrain_pre_n_days:
+
+        self.generate_factors()
+        if self.hist_bar_df.shape[0] < 1000:
             # 每 N 天重新训练一次
             return
-
-        if self._factor_df is None:
-            self.generate_factors()
+        if self.last_train_date is not None and (
+                self._last_bar_date - self.last_train_date).days <= self.retrain_pre_n_days:
+            return
 
         # 生成 y 值
         # 测试例子
@@ -269,7 +266,6 @@ class MFStrategy(TargetPosTemplate):
 
     def generate_factors(self):
         """整理缓存数据，生成相应的因子"""
-        # self.write_log("生成因子数据")
         df = pd.DataFrame(
             [{key: getattr(_, key) for key in BAR_ATTRIBUTES}
              for _ in self._hist_bar_list]).set_index('datetime')
@@ -288,6 +284,7 @@ class MFStrategy(TargetPosTemplate):
             ohlcav_col_name_list=['open_price', 'high_price', 'low_price', 'close_price', None, 'volume'],
             dropna=False
         )
+        # logger.info("生成因子数据 %s", self._current_bar.datetime)
 
     def on_trade(self, trade: TradeData):
         """
