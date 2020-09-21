@@ -192,40 +192,57 @@ class MFStrategy(TargetPosTemplate):
         factor_df = self._factor_df.iloc
         y_s = self.hist_bar_df['close_price'].rolling(
             window=self.target_n_bars).apply(lambda x: x.calc_calmar_ratio())
-        # 剔除无效数据
+        # 剔除无效数据，并根据 target_n_bars 进行数据切片
         is_available = ~(np.isinf(y_s) | np.isnan(y_s) | np.any(np.isnan(factor_df), axis=1))[:-self.target_n_bars]
         # 截选对应的 factor_df， x_arr， y_arr
-        available_factor_df = factor_df[is_available]
+        available_factor_df = factor_df[is_available].iloc[:-self.target_n_bars]
         x_arr = available_factor_df.to_numpy()
-        y_arr = y_s[is_available]
-        # 根据 target_n_bars 进行数据切片
-        factor_df = factor_df.iloc[:-self.target_n_bars]
-        x_arr = x_arr[:-self.target_n_bars]
-        y_s = y_s[self.target_n_bars:]
+        y_arr = y_s[is_available][self.target_n_bars:]
         assert x_arr.shape[0] == y_s.shape[0], "因子数据 x 长度要与训练目标 y 数据长度一致"
         # 生成 -1 1 分类结果
         y_arr[y_arr > 0] = 1
         y_arr[y_arr <= 0] = -1
-        x_train_arr, x_test_arr, y_train_arr, y_test_arr = train_test_split(
-            x_arr, y_arr, test_size=0.3)
 
         # Train classifier
         scaler = preprocessing.MinMaxScaler()
         clf = ensemble.AdaBoostClassifier(
             n_estimators=self.n_estimators, learning_rate=self.learning_rate)
 
-        x_train_trans_arr = scaler.fit_transform(x_train_arr)
-        # print 'type(X_train_trans),X_train_trans[:5,:]\n%s\n%s'%(type(X_train_trans),X_train_trans[:5,:])
-        # print 'type(Y_train),Y_train.head()\n%s\n%s'%(type(Y_train),Y_train.head())
-        clf.fit(x_train_trans_arr, y_train_arr)
-        # 交叉检验
-        y_pred = clf.predict(x_train_trans_arr)
-        self.write_log('Accuracy on train set = {:.2f}%'.format(metrics.accuracy_score(y_train_arr, y_pred) * 100))
-        x_test_trans = scaler.transform(x_test_arr)
-        y_pred = clf.predict(x_test_trans)
-        y_pred_prob = clf.predict_proba(x_test_trans)
-        self.write_log('Accuracy on test set = {:.2f}%'.format(metrics.accuracy_score(y_test_arr, y_pred) * 100))
-        self.write_log('Log-loss on test set = {:.5f}'.format(metrics.log_loss(y_test_arr, y_pred_prob)))
+        # 交叉验证训练逻辑，实际交易过程中不适用此逻辑，直接全样本内训练
+        # x_train_arr, x_test_arr, y_train_arr, y_test_arr = train_test_split(
+        #     x_arr, y_arr, test_size=0.3)
+        #
+        # x_train_trans_arr = scaler.fit_transform(x_train_arr)
+        # # print 'type(X_train_trans),X_train_trans[:5,:]\n%s\n%s'%(type(X_train_trans),X_train_trans[:5,:])
+        # # print 'type(Y_train),Y_train.head()\n%s\n%s'%(type(Y_train),Y_train.head())
+        # clf.fit(x_train_trans_arr, y_train_arr)
+        # # 交叉检验
+        # y_pred = clf.predict(x_train_trans_arr)
+        # self.write_log('Accuracy on train set = {:.2f}%'.format(metrics.accuracy_score(y_train_arr, y_pred) * 100))
+        # x_test_trans = scaler.transform(x_test_arr)
+        # y_pred = clf.predict(x_test_trans)
+        # y_pred_prob = clf.predict_proba(x_test_trans)
+        # self.write_log('Accuracy on test set = {:.2f}%'.format(metrics.accuracy_score(y_test_arr, y_pred) * 100))
+        # self.write_log('Log-loss on test set = {:.5f}'.format(metrics.log_loss(y_test_arr, y_pred_prob)))
+
+        # 全样本内训练
+        # 将过去 stat_n_days 日期内的数据截取出来进行训练
+        available_factor_df_date_s = pd.Series(
+            available_factor_df.index, index=available_factor_df.index).apply(
+            lambda x: x.date())
+        # Unique 日期序列
+        date_s = pd.Series(available_factor_df_date_s.unique())
+        dates = date_s.iloc[-self.stat_n_days:]
+        date_from, date_to = pd.to_datetime(dates.min()), pd.to_datetime(dates.max())
+        sub_available = ((date_from <= date_s) & (date_s < date_to)).to_numpy()
+        sub_factor_df = available_factor_df[sub_available]
+        sub_y_arr = y_arr[sub_available]
+        sub_x_trans_arr = scaler.fit_transform(sub_factor_df.to_numpy())
+        # 训练
+        clf.fit(sub_x_trans_arr, sub_y_arr)
+        sub_y_train_pred = clf.predict(sub_x_trans_arr)
+        logger.info('Accuracy on train set = {:.2f}%'.format(
+            metrics.accuracy_score(sub_y_arr, sub_y_train_pred) * 100))
         self.classifier = clf
         self.scaler = scaler
         self.last_train_date = self._current_bar.datetime.date()
