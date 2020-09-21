@@ -148,6 +148,9 @@ class MFStrategy(TargetPosTemplate):
         if self.classifier is None:
             return
 
+        if self._factor_df is None:
+            self.generate_factors()
+
         target_position = self.predict()
         # self.write_log(f'{datetime_2_str(bar.datetime)} target_position={target_position}')
         self.set_target_pos(
@@ -169,6 +172,7 @@ class MFStrategy(TargetPosTemplate):
         #     self.short(price=price, volume=self.fixed_size)
 
         # self.put_event()
+        self._factor_df = None
 
     def retrain_data(self, force_train=False):
         """
@@ -180,25 +184,28 @@ class MFStrategy(TargetPosTemplate):
         if not (self._is_new_day or force_train):
             # 只有每次换日时才重新训练
             return
-        if self._factor_df.shape[0] >= 1000 and self._hist_bar_days < self.retrain_pre_n_days:
+        if self._factor_df.shape[0] < 1000 or self._hist_bar_days < self.retrain_pre_n_days:
             # 每 N 天重新训练一次
             return
+
+        if self._factor_df is None:
+            self.generate_factors()
 
         # 生成 y 值
         # 测试例子
         # df = pd.DataFrame(np.linspace(1, 2) * 10 + np.random.random(50),
         #                   index=pd.date_range('2020-01-01', periods=50),
         #                   columns=['close_price'])
-        factor_df = self._factor_df.iloc
+        factor_df = self._factor_df
         y_s = self.hist_bar_df['close_price'].rolling(
             window=self.target_n_bars).apply(lambda x: x.calc_calmar_ratio())
         # 剔除无效数据，并根据 target_n_bars 进行数据切片
-        is_available = ~(np.isinf(y_s) | np.isnan(y_s) | np.any(np.isnan(factor_df), axis=1))[:-self.target_n_bars]
+        is_available = ~(np.isinf(y_s) | np.isnan(y_s) | np.any(np.isnan(factor_df.to_numpy()), axis=1))
         # 截选对应的 factor_df， x_arr， y_arr
         available_factor_df = factor_df[is_available].iloc[:-self.target_n_bars]
         x_arr = available_factor_df.to_numpy()
         y_arr = y_s[is_available][self.target_n_bars:]
-        assert x_arr.shape[0] == y_s.shape[0], "因子数据 x 长度要与训练目标 y 数据长度一致"
+        assert x_arr.shape[0] == y_arr.shape[0], f"因子数据 x{x_arr.shape}长度要与训练目标数据 y{y_arr.shape}长度一致"
         # 生成 -1 1 分类结果
         y_arr[y_arr > 0] = 1
         y_arr[y_arr <= 0] = -1
@@ -231,13 +238,18 @@ class MFStrategy(TargetPosTemplate):
             available_factor_df.index, index=available_factor_df.index).apply(
             lambda x: x.date())
         # Unique 日期序列
-        date_s = pd.Series(available_factor_df_date_s.unique())
-        dates = date_s.iloc[-self.stat_n_days:]
+        dates = pd.Series(available_factor_df_date_s.unique()).iloc[-self.stat_n_days:]
         date_from, date_to = pd.to_datetime(dates.min()), pd.to_datetime(dates.max())
-        sub_available = ((date_from <= date_s) & (date_s < date_to)).to_numpy()
-        sub_factor_df = available_factor_df[sub_available]
+        sub_available = ((date_from <= available_factor_df_date_s) & (available_factor_df_date_s <= date_to)
+                         ).to_numpy()
+        logger.info("factor_df.shape=%s, x_arr.shape=%s, "
+                    "date_from=%s, date_to=%s, x_arr[sub_available].shape=%s",
+                    factor_df.shape, x_arr.shape, date_from, date_to, x_arr[sub_available].shape
+                    )
+        assert x_arr.shape[0] == sub_available.shape[0] == y_arr.shape[0], \
+            f"因子数据 x{x_arr.shape}长度 要与有效范围数据 sub_available{sub_available.shape}长度一致"
+        sub_x_trans_arr = scaler.fit_transform(x_arr[sub_available])
         sub_y_arr = y_arr[sub_available]
-        sub_x_trans_arr = scaler.fit_transform(sub_factor_df.to_numpy())
         # 训练
         clf.fit(sub_x_trans_arr, sub_y_arr)
         sub_y_train_pred = clf.predict(sub_x_trans_arr)
