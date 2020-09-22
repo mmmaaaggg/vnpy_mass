@@ -1,5 +1,2 @@
-vnpy==2.1.5
-vnstation @ https://vnpy-pip.oss-cn-shanghai.aliyuncs.com/vnpy/vnstation/vnstation-2.5.2.tar.gz
-rqsdk==1.2.18
 IBATS_Common>=0.19.3
 # scipy==1.4.1  # tensorflow 2.3.0 requires scipy==1.4.1
