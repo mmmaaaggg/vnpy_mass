@@ -197,6 +197,8 @@ class MFStrategy(TargetPosTemplate):
         factor_df = self._factor_df
         y_s = self.hist_bar_df['close_price'].rolling(
             window=self.target_n_bars).apply(lambda x: x.calc_calmar_ratio())
+        y_s[np.isneginf(y_s)] = -100
+        y_s[np.isposinf(y_s)] = 100
         # 剔除无效数据，并根据 target_n_bars 进行数据切片
         is_available = ~(np.isinf(y_s) | np.isnan(y_s) | np.any(np.isnan(factor_df.to_numpy()), axis=1))
         # 截选对应的 factor_df， x_arr， y_arr
