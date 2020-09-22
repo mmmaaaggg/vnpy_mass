@@ -24,6 +24,7 @@ from vnpy.app.cta_strategy import (
     BarGenerator,
     TargetPosTemplate,
 )
+from collections import Counter
 from .config import logging
 
 BAR_ATTRIBUTES = [
@@ -232,26 +233,40 @@ class MFStrategy(TargetPosTemplate):
         # 全样本内训练
         # 将过去 stat_n_days 日期内的数据截取出来进行训练
         available_factor_df_date_s = pd.Series(
-            available_factor_df.index, index=available_factor_df.index).apply(
-            lambda x: x.date())
+            available_factor_df.index, index=available_factor_df.index
+        ).apply(lambda x: x.date())
         # Unique 日期序列
         dates = pd.Series(available_factor_df_date_s.unique()).iloc[-self.stat_n_days:]
         date_from, date_to = pd.to_datetime(dates.min()), pd.to_datetime(dates.max())
         sub_available = ((date_from <= available_factor_df_date_s) & (available_factor_df_date_s <= date_to)
                          ).to_numpy()
-        logger.info("factor_df.shape=%s, x_arr.shape=%s, "
-                    "date_from=%s, date_to=%s, x_arr[sub_available].shape=%s",
-                    factor_df.shape, x_arr.shape, date_from, date_to, x_arr[sub_available].shape
-                    )
         assert x_arr.shape[0] == sub_available.shape[0] == y_arr.shape[0], \
             f"因子数据 x{x_arr.shape}长度 要与有效范围数据 sub_available{sub_available.shape}长度一致"
         sub_x_trans_arr = scaler.fit_transform(x_arr[sub_available])
         sub_y_arr = y_arr[sub_available]
+        logger.info("factor_df.shape=%s, x_arr.shape=%s, "
+                    "date_from=%s, date_to=%s, sub_x_trans_arr.shape=%s",
+                    factor_df.shape, x_arr.shape, date_from, date_to, sub_x_trans_arr.shape)
         # 训练
         clf.fit(sub_x_trans_arr, sub_y_arr)
         sub_y_train_pred = clf.predict(sub_x_trans_arr)
         logger.info('Accuracy on train set = {:.2f}%'.format(
             metrics.accuracy_score(sub_y_arr, sub_y_train_pred) * 100))
+        # self.write_log("目标结果占比情况")
+        # for value, count in Counter(sub_y_arr).items():
+        #     self.write_log(f"{int(value):2d} 共 {count:4d} 次， 占比{count/sub_y_arr.shape[0] * 100:5.2f}%")
+        # self.write_log("预测结果占比情况")
+        # for value, count in Counter(sub_y_train_pred).items():
+        #     self.write_log(f"{int(value):2d} 共 {count:4d} 次， 占比{count/sub_y_arr.shape[0] * 100:5.2f}%")
+        df = pd.DataFrame(
+            {value: {'value': value, '次数': count, '占比': count / sub_y_arr.shape[0] * 100}
+             for value, count in Counter(sub_y_arr).items()},
+        ).T.set_index('value').join(pd.DataFrame(
+            {value: {'value': value, '次数': count, '占比': count / sub_y_train_pred.shape[0] * 100}
+             for value, count in Counter(sub_y_train_pred).items()},
+        ).T.set_index('value'), how='outer', on='value', lsuffix='(目标)', rsuffix='(预测)')
+
+        self.write_log('\n' + str(df))
         self.classifier = clf
         self.scaler = scaler
         self.last_train_date = self._current_bar.datetime.date()
