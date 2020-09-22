@@ -6,7 +6,6 @@
 @desc    : 用于多周期共振策略
 首先研究 1分钟、5分钟周期共振，之后再扩展到多周期，甚至日级别共振
 """
-from ibats_utils.mess import datetime_2_str
 from vnpy.app.cta_strategy import (
     StopOrder,
     TickData,
@@ -18,7 +17,7 @@ from vnpy.app.cta_strategy import (
     CtaSignal,
     TargetPosTemplate
 )
-from .config import logging
+from config import logging
 
 logger = logging.getLogger()
 
